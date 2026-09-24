@@ -20,8 +20,10 @@ CACHE_FILE = os.path.join(OUTPUT_DIR, 'file_cache.json')
 
 def process_file(args):
     file_path, rel_path, THUMB_DIR = args
-    ext = os.path.splitext(file_path)[1].lower()  # 小文字に統一
-    thumb_name = rel_path.replace("\\", "_").replace("/", "_") + ".jpg"
+    ext = os.path.splitext(file_path)[1].lower()
+    # 拡張子部分（.MOV等）を取り除いてから .jpg を付ける
+    base_rel_path = os.path.splitext(rel_path)[0]
+    thumb_name = base_rel_path.replace("\\", "_").replace("/", "_") + ".jpg"
     thumb_path = os.path.join(THUMB_DIR, thumb_name)
     has_thumb = False
 

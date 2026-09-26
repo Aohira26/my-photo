@@ -21,13 +21,14 @@ CACHE_FILE = os.path.join(OUTPUT_DIR, 'file_cache.json')
 def process_file(args):
     file_path, rel_path, THUMB_DIR = args
     ext = os.path.splitext(file_path)[1].lower()
-    # 拡張子部分（.MOV等）を取り除いてから .jpg を付ける
+    
+    # 元の拡張子（.MOV, .JPG など）を取り除いてから .jpg を統一付与
     base_rel_path = os.path.splitext(rel_path)[0]
     thumb_name = base_rel_path.replace("\\", "_").replace("/", "_") + ".jpg"
     thumb_path = os.path.join(THUMB_DIR, thumb_name)
     has_thumb = False
 
-    # 画像ファイル（.heic や .jpg, .png など）
+    # 画像ファイル（.heic, .jpg, .png 等）
     if ext in ['.jpg', '.jpeg', '.png', '.webp', '.bmp', '.heic']:
         try:
             with Image.open(file_path) as img:
@@ -38,11 +39,11 @@ def process_file(args):
                 has_thumb = True
         except: pass
 
-    # 動画ファイル（.mov, .mp4 など）
+    # 動画ファイル（.mov, .mp4 等）
     elif ext in ['.mp4', '.mkv', '.mov', '.avi', '.wmv', '.m4v']:
         try:
             cap = cv2.VideoCapture(file_path)
-            # 最初の数フレームをスキップして確実に画像をキャプチャ
+            # 最初の数フレームをスキップして黒画面回避
             for _ in range(5):
                 ret, frame = cap.read()
                 if not ret:
@@ -137,7 +138,7 @@ def main():
         except: pass
 
     if os.path.exists(THUMB_DIR):
-        shutil.rmtree(THUMB_DIR)
+        shutil.rmtree(THUMB_DIR, ignore_errors=True)
     os.makedirs(THUMB_DIR, exist_ok=True)
 
     print(f"📸 変更を検出しました（全 {total_files} 件）。サムネイル作成を開始します...")

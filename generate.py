@@ -37,17 +37,30 @@ def process_file(args):
                 img.thumbnail((180, 180))
                 img.save(thumb_path, "JPEG", quality=65, optimize=True)
                 has_thumb = True
-        except: pass
+        except Exception as e:
+            pass
 
     # 動画ファイル（.mov, .mp4 等）
     elif ext in ['.mp4', '.mkv', '.mov', '.avi', '.wmv', '.m4v']:
         try:
             cap = cv2.VideoCapture(file_path)
-            # 最初の数フレームをスキップして黒画面回避
-            for _ in range(5):
-                ret, frame = cap.read()
-                if not ret:
-                    break
+            
+            # 最初の1秒（または数フレーム目）にジャンプしてフレーム取得を試みる
+            total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+            if total_frames > 0:
+                # 動画の中間または最初の方のフレームを指定
+                cap.set(cv2.CAP_PROP_POS_FRAMES, min(5, total_frames - 1))
+            
+            ret, frame = cap.read()
+            
+            # もし指定フレームで読めなかった場合、最初から順に試す
+            if not ret or frame is None:
+                cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                for _ in range(10):
+                    ret, frame = cap.read()
+                    if ret and frame is not None:
+                        break
+
             if ret and frame is not None:
                 h, w = frame.shape[:2]
                 new_w = 180
@@ -55,8 +68,10 @@ def process_file(args):
                 resized = cv2.resize(frame, (new_w, new_h))
                 cv2.imwrite(thumb_path, resized, [int(cv2.IMWRITE_JPEG_QUALITY), 65])
                 has_thumb = True
+            
             cap.release()
-        except: pass
+        except Exception as e:
+            pass
 
     return rel_path, thumb_name, has_thumb
 

@@ -15,69 +15,63 @@ register_heif_opener()
 # ------------------------------------
 STORAGE_PATH = r'E:\写真\旅行'  # 対象のフォルダパス
 OUTPUT_DIR = os.path.dirname(os.path.abspath(__file__))
-THUMB_DIR = os.path.join(OUTPUT_DIR, 'thumbnails')
+FULL_IMAGES_DIR = os.path.join(OUTPUT_DIR, 'full_images')
 CACHE_FILE = os.path.join(OUTPUT_DIR, 'file_cache.json')
 
 def process_file(args):
-    file_path, rel_path, THUMB_DIR = args
+    file_path, rel_path, FULL_IMAGES_DIR = args
     ext = os.path.splitext(file_path)[1].lower()
     
-    # 元の拡張子（.MOV, .JPG など）を取り除いてから .jpg を統一付与
+    # 保存先ファイル名は拡張子を .jpg または元画像拡張子に統一
     base_rel_path = os.path.splitext(rel_path)[0]
-    thumb_name = base_rel_path.replace("\\", "_").replace("/", "_") + ".jpg"
-    thumb_path = os.path.join(THUMB_DIR, thumb_name)
-    has_thumb = False
+    has_image = False
 
-    # 画像ファイル（.heic, .jpg, .png 等）
+    # 画像ファイル（.heic, .jpg, .png 等）は原寸で full_images にコピー
     if ext in ['.jpg', '.jpeg', '.png', '.webp', '.bmp', '.heic']:
+        image_name = base_rel_path.replace("\\", "_").replace("/", "_") + ext
+        dest_path = os.path.join(FULL_IMAGES_DIR, image_name)
         try:
-            with Image.open(file_path) as img:
-                if img.mode != 'RGB':
-                    img = img.convert('RGB')
-                img.thumbnail((180, 180))
-                img.save(thumb_path, "JPEG", quality=65, optimize=True)
-                has_thumb = True
+            if not os.path.exists(dest_path):
+                shutil.copy2(file_path, dest_path)
+            has_image = True
         except Exception as e:
             pass
 
-    # 動画ファイル（.mov, .mp4 等）
+    # 動画ファイル（.mov, .mp4 等）は静止画（.jpg）を切り出して保存
     elif ext in ['.mp4', '.mkv', '.mov', '.avi', '.wmv', '.m4v']:
+        image_name = base_rel_path.replace("\\", "_").replace("/", "_") + ".jpg"
+        dest_path = os.path.join(FULL_IMAGES_DIR, image_name)
         try:
-            cap = cv2.VideoCapture(file_path)
-            
-            # 最初の1秒（または数フレーム目）にジャンプしてフレーム取得を試みる
-            total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-            if total_frames > 0:
-                # 動画の中間または最初の方のフレームを指定
-                cap.set(cv2.CAP_PROP_POS_FRAMES, min(5, total_frames - 1))
-            
-            ret, frame = cap.read()
-            
-            # もし指定フレームで読めなかった場合、最初から順に試す
-            if not ret or frame is None:
-                cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
-                for _ in range(10):
-                    ret, frame = cap.read()
-                    if ret and frame is not None:
-                        break
+            if not os.path.exists(dest_path):
+                cap = cv2.VideoCapture(file_path)
+                total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+                if total_frames > 0:
+                    cap.set(cv2.CAP_PROP_POS_FRAMES, min(5, total_frames - 1))
+                
+                ret, frame = cap.read()
+                if not ret or frame is None:
+                    cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                    for _ in range(10):
+                        ret, frame = cap.read()
+                        if ret and frame is not None:
+                            break
 
-            if ret and frame is not None:
-                h, w = frame.shape[:2]
-                new_w = 180
-                new_h = int(h * (180 / w))
-                resized = cv2.resize(frame, (new_w, new_h))
-                cv2.imwrite(thumb_path, resized, [int(cv2.IMWRITE_JPEG_QUALITY), 65])
-                has_thumb = True
-            
-            cap.release()
+                if ret and frame is not None:
+                    # 画質を落とさず（高画質JPEG）そのまま保存
+                    cv2.imwrite(dest_path, frame, [int(cv2.IMWRITE_JPEG_QUALITY), 95])
+                    has_image = True
+                
+                cap.release()
+            else:
+                has_image = True
         except Exception as e:
             pass
 
-    return rel_path, thumb_name, has_thumb
+    return rel_path, image_name, has_image
 
 def build_tree(results):
     tree = {"_files": [], "_subfolders": {}}
-    for rel_path, thumb_name, has_thumb in results:
+    for rel_path, image_name, has_image in results:
         parts = rel_path.replace("\\", "/").split("/")
         filename = parts[-1]
         folders = parts[:-1]
@@ -91,8 +85,8 @@ def build_tree(results):
         current["_files"].append({
             "name": filename,
             "rel_path": rel_path,
-            "thumb_name": thumb_name,
-            "has_thumb": has_thumb
+            "image_name": image_name,
+            "has_image": has_image
         })
     return tree
 
@@ -116,8 +110,8 @@ def render_folder_html(folder_dict, path_prefix=""):
         html += '<div class="grid">'
         for file in folder_dict["_files"]:
             html += '<div class="card">'
-            if file["has_thumb"]:
-                html += f'<img src="thumbnails/{file["thumb_name"]}" alt="{file["name"]}" loading="lazy">'
+            if file["has_image"]:
+                html += f'<img src="full_images/{file["image_name"]}" alt="{file["name"]}" loading="lazy">'
             else:
                 html += '<div class="file-icon">📄</div>'
             html += f'<div class="filename">{file["name"]}</div></div>\n'
@@ -138,7 +132,7 @@ def main():
             file_path = os.path.join(root, file)
             rel_path = os.path.relpath(file_path, STORAGE_PATH)
             current_files.append(rel_path)
-            file_tasks.append((file_path, rel_path, THUMB_DIR))
+            file_tasks.append((file_path, rel_path, FULL_IMAGES_DIR))
 
     current_files.sort()
     total_files = len(current_files)
@@ -152,11 +146,9 @@ def main():
                 sys.exit(100)
         except: pass
 
-    if os.path.exists(THUMB_DIR):
-        shutil.rmtree(THUMB_DIR, ignore_errors=True)
-    os.makedirs(THUMB_DIR, exist_ok=True)
+    os.makedirs(FULL_IMAGES_DIR, exist_ok=True)
 
-    print(f"📸 変更を検出しました（全 {total_files} 件）。サムネイル作成を開始します...")
+    print(f"📸 変更を検出しました（全 {total_files} 件）。full_images への抽出・コピーを開始します...")
     results = []
     with ProcessPoolExecutor() as executor:
         for i, res in enumerate(executor.map(process_file, file_tasks), 1):
@@ -292,7 +284,7 @@ def main():
     with open(CACHE_FILE, 'w', encoding='utf-8') as f:
         json.dump(current_files, f, ensure_ascii=False, indent=2)
 
-    print("✨ エクスプローラー風HTMLの高速生成が完了しました！")
+    print("✨ エクスプローラー風HTMLの生成が完了しました！")
 
 if __name__ == '__main__':
     main()

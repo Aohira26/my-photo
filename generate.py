@@ -1,6 +1,5 @@
 import os
 import sys
-import shutil
 import json
 import cv2
 from PIL import Image
@@ -18,29 +17,32 @@ OUTPUT_DIR = os.path.dirname(os.path.abspath(__file__))
 FULL_IMAGES_DIR = os.path.join(OUTPUT_DIR, 'full_images')
 CACHE_FILE = os.path.join(OUTPUT_DIR, 'file_cache.json')
 
+# 画像の最大辺（ピクセル）。ここでリサイズして容量を軽くします
+MAX_IMAGE_SIZE = 1200  
+
 def process_file(args):
     file_path, rel_path, FULL_IMAGES_DIR = args
     ext = os.path.splitext(file_path)[1].lower()
     
-    # 保存先ファイル名は拡張子を .jpg または元画像拡張子に統一
     base_rel_path = os.path.splitext(rel_path)[0]
+    image_name = base_rel_path.replace("\\", "_").replace("/", "_") + ".jpg"
+    dest_path = os.path.join(FULL_IMAGES_DIR, image_name)
     has_image = False
 
-    # 画像ファイル（.heic, .jpg, .png 等）は原寸で full_images にコピー
+    # 写真ファイル (.jpg, .jpeg, .png, .heic 等) をリサイズして軽量化保存
     if ext in ['.jpg', '.jpeg', '.png', '.webp', '.bmp', '.heic']:
-        image_name = base_rel_path.replace("\\", "_").replace("/", "_") + ext
-        dest_path = os.path.join(FULL_IMAGES_DIR, image_name)
         try:
             if not os.path.exists(dest_path):
-                shutil.copy2(file_path, dest_path)
+                with Image.open(file_path) as img:
+                    img = img.convert('RGB')
+                    img.thumbnail((MAX_IMAGE_SIZE, MAX_IMAGE_SIZE))
+                    img.save(dest_path, 'JPEG', quality=85)
             has_image = True
         except Exception as e:
             pass
 
-    # 動画ファイル（.mov, .mp4 等）は静止画（.jpg）を切り出して保存
+    # 動画ファイル (.mp4, .mov 等) から1コマ抽出して軽量化保存
     elif ext in ['.mp4', '.mkv', '.mov', '.avi', '.wmv', '.m4v']:
-        image_name = base_rel_path.replace("\\", "_").replace("/", "_") + ".jpg"
-        dest_path = os.path.join(FULL_IMAGES_DIR, image_name)
         try:
             if not os.path.exists(dest_path):
                 cap = cv2.VideoCapture(file_path)
@@ -57,8 +59,11 @@ def process_file(args):
                             break
 
                 if ret and frame is not None:
-                    # 画質を落とさず（高画質JPEG）そのまま保存
-                    cv2.imwrite(dest_path, frame, [int(cv2.IMWRITE_JPEG_QUALITY), 95])
+                    h, w = frame.shape[:2]
+                    if max(h, w) > MAX_IMAGE_SIZE:
+                        scale = MAX_IMAGE_SIZE / max(h, w)
+                        frame = cv2.resize(frame, (int(w * scale), int(h * scale)))
+                    cv2.imwrite(dest_path, frame, [int(cv2.IMWRITE_JPEG_QUALITY), 85])
                     has_image = True
                 
                 cap.release()
@@ -148,7 +153,7 @@ def main():
 
     os.makedirs(FULL_IMAGES_DIR, exist_ok=True)
 
-    print(f"📸 変更を検出しました（全 {total_files} 件）。full_images への抽出・コピーを開始します...")
+    print(f"📸 変更を検出しました（全 {total_files} 件）。軽量化処理を開始します...")
     results = []
     with ProcessPoolExecutor() as executor:
         for i, res in enumerate(executor.map(process_file, file_tasks), 1):
@@ -284,7 +289,7 @@ def main():
     with open(CACHE_FILE, 'w', encoding='utf-8') as f:
         json.dump(current_files, f, ensure_ascii=False, indent=2)
 
-    print("✨ エクスプローラー風HTMLの生成が完了しました！")
+    print("✨ 軽量化されたHTMLの生成が完了しました！")
 
 if __name__ == '__main__':
     main()
